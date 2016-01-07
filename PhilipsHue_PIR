@@ -1,0 +1,127 @@
+#include <ESP8266WiFi.h>
+
+const char* ssid = "<SSID>";
+const char* password = "<PASS>";
+const char* host = "<IP>";
+
+const int pir_input1 = 12; // use digital input number 12 for PIR-sensor
+const int no_motion_wait = 300000; // time to wait with no motion before turning light off - 300 000 milliseconds = 5 minutes
+boolean on_flag1 = 0;
+int count = 0; // counter for motion
+int count2 = 0; // counter for no motion
+unsigned long last_motion;
+
+void setup() {
+  pinMode(2, OUTPUT); // prepare internal LED
+  pinMode(pir_input1,INPUT); // prepare digital input for PIR sensor
+  Serial.begin(115200); // prepare serial communication for debug
+  digitalWrite(2,1); // turn lights off
+
+  delay(10);
+  
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  } // end wifi status
+  
+  Serial.println("");
+  Serial.println("WiFi connected");  
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+} // end setup
+
+void loop() {
+  
+  //  check if there is motion
+  if(digitalRead(pir_input1)==1){
+    count++; // there is motion, add one to motion counter
+    count2 = 0;  // and zero the no motion counter
+  }else{  // there is no motion
+    count2++; // add one to the NO motion counter
+    count = 0; // zero the motion counter
+  }
+
+  // if motion three times in a row
+  if(count==3){
+    //  and the light is off
+    if (on_flag1 == 0){
+      
+      digitalWrite(2,0); //turn lights on
+      
+      hueON(4,200);
+      hueON(7,200);
+      hueON(8,200);
+      hueON(9,200);
+      
+      on_flag1 = 1; // set flag to indicate that the light is on
+      count = 0; // zero the "if motion counter"
+    } // end if flag == 0
+    last_motion = millis(); // set the time for last "motion three times in a row"
+    count = 0; // zero the "if motion counter"
+  } // end if counting to three motion detections
+  
+  // check if there is no movement three times in a row
+  if(count2==3){
+    //  // then check if the light is on
+    if (on_flag1 == 1){
+      count2 = 0; // zero the "there-is-no-motion counter"
+      // Check if there is enough time since the last movement
+      if(millis() > (last_motion+no_motion_wait)){ 
+        // it is enough time since the last movement
+        
+        digitalWrite(2,1); // turn lights off
+
+        hueOFF(4);
+        hueOFF(7);
+        hueOFF(8);
+        hueOFF(9);
+        
+        on_flag1 = 0; // turn flag off to indicate that lights are off
+        count2 = 0; // zero the "there-is-no-motion counter"
+      } // end if enough time since last motion
+    } // end if flag == 1
+  } // end if counting to three no motion
+} // end main loop
+
+
+void hueON(int lamp, int brightness) {
+  WiFiClient client;
+  if (client.connect("<IP>",80))
+  {
+    client.print("PUT /api/<USER-ID>/lights/");
+    client.print(lamp);
+    client.println("/state HTTP/1.1");
+    client.println("Host: <IP>");                          
+    client.println("Connection: close");
+    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.println("Content-Length: 24\r\n");
+    client.print("{\"on\":true,");
+    client.print("\"bri\":");
+    client.print(brightness);
+    client.print("}"); 
+  }
+}
+
+void hueOFF(int lamp) {
+  WiFiClient client;
+  if (client.connect("<IP>",80))
+  {
+    client.print("PUT /api/<USER-ID>/lights/");
+    client.print(lamp);
+    client.println("/state HTTP/1.1");
+    client.println("Host: <IP>");                          
+    client.println("Connection: close");
+    client.println("Content-Type: application/x-www-form-urlencoded");
+    client.println("Content-Length: 12\r\n");
+    client.print("{\"on\":false}");  
+  }
+}
+
+
