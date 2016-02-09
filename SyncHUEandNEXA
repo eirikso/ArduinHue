@@ -1,0 +1,200 @@
+#include <NexaTransmitter.h>
+#include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
+
+// You need to insert <NEXA-REMOTE-ID>, <SSID>, <WLAN_PASS>, <BRIDGE-IP> and <HUE-DEVELOPER-ID>
+
+// This code asks for the status of two "main bulbs" in two different rooms. 
+// It then sets the state of all the Nexa devices in the same room accordingly
+
+//////////////////////////
+//                      //
+//   NEXA VARIABLES     //
+//                      //
+//////////////////////////
+NexaTransmitter remote(12,<NEXA-REMOTE-ID>); // Create the nexa remote on WeMos D1 digital input number 12 with remote id
+ 
+//////////////////////////
+//                      //
+//   HUE VARIABLES      //
+//                      //
+//////////////////////////
+const char* ssid = "<SSID>"; // Your WLAN SSID
+const char* password = "<WLAN_PASS>"; // Your WLAN Password
+const char* host = "<BRIDGE-IP>"; // IP of the HUE bridge
+
+// Module specific variables
+// const int buttonPin = D3; // WeMos D1 Mini button pin for button shield
+// General variables
+boolean flag_L = 0; // Flag to set status of Living Room
+boolean flag_K = 0; // Flag to set status of Kitchen
+
+// The main bulb in the scene you are triggering. To have at least one bulb to check the state of.
+// So that the code here is in "sync" with the actual state of the bulbs in the scene
+int main_bulb = 2;
+int kitchen_bulb = 22;
+
+
+unsigned long  last_check; // Counter to keep track of the last time we checked for the actual state of the main bulb
+
+//  Hue variable for checking
+boolean hueOn;  // on/off
+
+
+
+// Function to get the state of a bulb
+boolean getHue(int lamp)
+{
+  WiFiClient client;
+  if (client.connect(host,80))
+  {
+    client.print("GET /api/<HUE-DEVELOPER-ID>/lights/");
+    client.print(lamp);
+    client.println(" HTTP/1.1");
+    client.print("Host: ");
+    client.println(host);  
+    client.println("Content-type: application/json");
+    client.println("keep-alive");
+    client.println();
+    while (client.connected())
+    {
+      if (client.available())
+      {
+        client.findUntil("\"on\":", "\0");
+        hueOn = (client.readStringUntil(',') == "true");  // if light is on, set variable to true
+    
+        break;  // not capturing other light attributes yet
+      }
+     
+    }
+    client.stop();
+    return true;  // captured on,bri,hue
+  }
+  else
+    return false;  // error reading on,bri,hue
+} // end getHue
+
+
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUILTIN_LED, OUTPUT); // prepare internal LED
+  digitalWrite(BUILTIN_LED, HIGH); // turn LED off
+  
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  } 
+  
+  Serial.println("");
+  Serial.println("WiFi connected");  
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Lyset er:");
+  Serial.println(getHue (main_bulb));
+}
+
+
+void CheckLivingRoom()
+{
+  getHue (main_bulb); //Get status from Hue Main Bulb
+  delay(100);
+  Serial.println("Checking Living Room");
+  if ((hueOn==1) & (flag_L == 0)) //If main light bulb is on and the Nexa bulbs is off, then turn on the Nexa Devices.
+  {
+    Serial.println("Hue lights on. Turning on Nexa");   
+    flag_L = 1; // Set Living Room flag to 1 to indicate that the Nexa lights is now turned on
+
+    for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+      remote.setSwitch(true, 0, 15); // Mignon stålampe
+      remote.setSwitch(true, 4); // Alle tre 12v i tak
+      delay(100);
+    } // End for loop
+    
+  } // End if hue and flag
+
+  
+  if ((hueOn==0) & (flag_L == 1)) //If main light bulb is on and the Nexa bulbs is off, then turn on the Nexa Devices.
+  {
+    Serial.println("Hue lights off. Turning off Nexa");
+    flag_L = 0; // Set Living Room flag to 0 to indicate that the Nexa lights is now turned off
+    
+    for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+      remote.setSwitch(false, 0); // Mignon stålampe
+      remote.setSwitch(false, 4); // Alle tre 12v i tak
+      delay(100);
+    } // End for loop
+    
+  } // End if hue and flag
+} // End Void check living room
+
+void CheckKitchen()
+{
+  getHue (kitchen_bulb); //Get status from Hue Main Bulb
+  delay(100);
+  Serial.println("Checking Kitchen");
+  
+  if ((hueOn==1) & (flag_K == 0)) //If main light bulb is on and the Nexa bulbs is off, then turn on the Nexa Devices.
+  {
+    Serial.println("Hue lights on. Turning on Nexa");   
+    flag_K = 1; // Set Kitchen flag to 1 to indicate that the Nexa lights is now turned on
+
+    for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+      remote.setSwitch(true, 8, 15); // Spotrekke i tak GU10
+      remote.setSwitch(true, 9); // Alle tre downlightrekker
+      delay(100);
+    } // End for loop
+    
+  } // End if hue and flag
+
+  
+  if ((hueOn==0) & (flag_K == 1)) //If main light bulb is on and the Nexa bulbs is off, then turn on the Nexa Devices.
+  {
+    Serial.println("Hue lights off. Turning off Nexa");
+    flag_K = 0; // Set Kitchen flag to 0 to indicate that the Nexa lights is now turned off
+    
+    for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+      remote.setSwitch(false, 8); // Spotrekke i tak GU10
+      remote.setSwitch(false, 9); // Alle tre downlightrekker
+      delay(100);
+    } // End for loop
+    
+  } // End if hue and flag
+} // End void check kitchen
+
+
+void waitAndBlink(int waitTime) //Wait and do some fancy-blinking to show that you are alive
+{
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, HIGH);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, LOW);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, HIGH);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, LOW);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, HIGH);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, LOW);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, HIGH);
+  delay(waitTime/8);
+  digitalWrite(BUILTIN_LED, LOW);
+}
+
+
+
+void loop() {
+  CheckLivingRoom(); //Check if lights are on or off and turn on or off Nexa
+  delay(500);
+  CheckKitchen();
+  waitAndBlink(5000); //Wait and blink internal WeMos LED
+  
+}
