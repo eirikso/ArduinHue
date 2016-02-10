@@ -1,0 +1,127 @@
+// This code will constantly check a PIR for motion. If it detects motion 
+// it will turn on your specified Nexa switch. If it detects no motion for
+// one minute it will DIM the light to a specified level and keep that
+// level for another 30 seconds. If there is still no motion it will
+// then turn off the light.
+
+#include <ESP8266WiFi.h>
+#include <NexaTransmitter.h> // https://github.com/erix/NexaTransmitter
+#include <WiFiUdp.h>
+
+// Code for WeMos D1 Mini
+// Connect the PIR-sensor to D2
+// Connect the 433 Tx to D1
+
+// Using this PIR: Mini IR Infrared Pyroelectric PIR Body Motion Human Sensor Detector Module
+// http://www.banggood.com/Mini-IR-Infrared-Pyroelectric-PIR-Body-Motion-Human-Sensor-Detector-Module-p-1015337.html
+
+// Using this 433-transmitter: 433Mhz RF Transmitter With Receiver Kit For Arduino ARM MCU Wireless
+// http://www.banggood.com/433Mhz-RF-Transmitter-With-Receiver-Kit-For-Arduino-ARM-MCU-Wireless-p-74102.html
+
+//////////////////////////
+//                      //
+//   Variables to set   //
+//                      //
+//////////////////////////
+
+const int no_motion_wait = 90000; // time to wait with no motion before turning light off - 360 000 milliseconds = 6 minutes
+const int warning_dim = 60000; // time to wait with no motion before doing a warning dim - 300 000 milliseconds = 5 minutes
+
+const int NEXA_channel = 10; // The channel on the nexa remote that control the light in the room you install the PIR
+
+NexaTransmitter remote(D1,<NEXA-REMOTE-ID>); // Create the nexa remote on WeMos D1 mini digital input number D1 with remote id
+
+// Module specific variables
+const int pirPin = D2; // WeMos D1 Mini Pin for PIR sensor
+const int ledPin = BUILTIN_LED; // WeMos D1 Mini internal LED for indication
+
+// General variables
+boolean on_flag1 = 0;
+boolean dim_flag = 0;
+unsigned long last_motion;
+
+void setup() {
+  pinMode(ledPin, OUTPUT); // prepare internal LED
+  pinMode(pirPin, INPUT); // prepare digital input for PIR sensor
+
+  Serial.begin(115200); // prepare serial communication for debug
+  digitalWrite(ledPin, HIGH); // turn LED off
+
+  // Set Nexa to OFF
+  for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+  remote.setSwitch(false, NEXA_channel); // Call the 433 Tx and send command
+  delay(100);
+  } // End for loop
+
+
+  last_motion = millis();
+  
+} // end setup
+
+
+
+void loop() {
+
+  // if motion
+  if(digitalRead(pirPin) == HIGH){
+    //  and the light is off or the light is dimmed
+    if (on_flag1==0  || dim_flag==1){
+      
+      digitalWrite(ledPin, LOW); // turn the internal LED on to indicate status
+      // Serial.println("Light ON");
+      
+      // Set Nexa to ON
+      for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+      remote.setSwitch(true, NEXA_channel, 15); // Call the 433 Tx and send command
+      delay(100);
+      } // End for loop
+      
+      on_flag1 = 1; // set flag to indicate that the light is on
+      dim_flag = 0; // set the dim flag to 0 to indicate that light is not dimmed anymore
+     
+    } // end if flag == 0
+    last_motion = millis(); // set the time for last "motion three times in a row"
+    
+  } // end if motion
+
+
+ 
+  // if no motion
+  if(digitalRead(pirPin) == LOW){
+    // then check if the light is on
+    if (on_flag1 == 1){
+
+      // Then check if there is enough time since last movement to do a warning dim
+      // And that the state is not already warning dim
+      if((millis() > (last_motion+warning_dim)) && (dim_flag == 0)){ 
+        // Serial.println("Warning DIM");
+        
+        // Set Nexa to DIM
+        for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+        remote.setSwitch(true, NEXA_channel, 13); // Call the 433 Tx and send command
+        delay(100);
+        } // End for loop
+        dim_flag = 1;
+        } // end if time for dim
+      
+      // Check if there is enough time since the last movement to turn off
+      if(millis() > (last_motion+no_motion_wait)){ 
+        
+        // it is enough time since the last movement
+        digitalWrite(ledPin, HIGH); // turn internal LED off to indicate status
+        // Serial.println("Light OFF");
+        
+        // Set Nexa to OFF
+        for (int i=0; i <= 3; i++){ // Send the signal three times to be sure
+        remote.setSwitch(false, NEXA_channel); // Call the 433 Tx and send command
+        delay(100);
+        } // End for loop
+
+        on_flag1 = 0; // turn flag off to indicate that lights are off
+        dim_flag = 0; // turn dim flag off to indicate that the state is no longer dim
+      } // end if enough time since last motion
+      
+    } // end if flag == 1
+  } // end if no motion
+
+} // End main loop
