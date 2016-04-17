@@ -1,2 +1,2 @@
-# ArduinHue
-Connecting Arduino and Philips Hue
+# Arduino stuff
+Just collecting some of the code I make for my arduinos
